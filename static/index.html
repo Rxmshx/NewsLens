@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI News Analyst | Categorization & Extraction</title>
+    <meta name="description" content="An advanced NLP system for categorizing news articles, extracting key entities and summarizing sentiment.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+    <div class="background-shapes">
+        <div class="shape shape-1"></div>
+        <div class="shape shape-2"></div>
+        <div class="shape shape-3"></div>
+    </div>
+
+    <main class="container">
+        
+        <header class="header">
+            <h1 class="logo">Nexus<span>Insight</span></h1>
+            <p class="subtitle">Intelligent Text Classification & Entity Extraction</p>
+        </header>
+
+        <section class="input-section glass-panel">
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchTab('url', event)">
+                    <i class="fas fa-link"></i> Analyze URL
+                </button>
+                <button class="tab-btn" onclick="switchTab('text', event)">
+                    <i class="fas fa-align-left"></i> Raw Text
+                </button>
+            </div>
+
+            <div class="input-container" id="url-container">
+                <div class="search-wrapper">
+                    <input type="url" id="url-input" placeholder="Paste news article URL here (e.g., https://bbc.com/news/...)">
+                    <button class="action-btn" onclick="analyze('url')">
+                        <span class="btn-text">Analyze</span>
+                        <i class="fas fa-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="input-container hidden" id="text-container">
+                <textarea id="text-input" placeholder="Paste raw article text or document content here..."></textarea>
+                <button class="action-btn full-width mt-3" onclick="analyze('text')">
+                    <span class="btn-text">Extract Insights</span>
+                    <i class="fas fa-magic"></i>
+                </button>
+            </div>
+
+            <div class="loading-overlay hidden" id="loading">
+                <div class="loader"></div>
+                <p>Analyzing document syntax and extracting entities...</p>
+            </div>
+            
+            <div id="error-message" class="error-toast hidden"></div>
+        </section>
+
+        <section class="results-section hidden" id="results">
+            <div class="result-header">
+                <h2>Analysis Results</h2>
+                <h3 id="res-headline" class="article-title"></h3>
+                <p id="res-preview" class="article-preview"></p>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="metric-card glass-panel bounce-in" style="animation-delay: 0.1s">
+                    <div class="metric-icon category-icon"><i class="fas fa-layer-group"></i></div>
+                    <h4>Classification</h4>
+                    <div class="metric-value" id="res-category">—</div>
+                    <div class="metric-subtext" id="res-confidence"></div>
+                </div>
+
+                <div class="metric-card glass-panel bounce-in" style="animation-delay: 0.2s">
+                    <div class="metric-icon sentiment-icon"><i class="fas fa-heartbeat"></i></div>
+                    <h4>Sentiment</h4>
+                    <div class="metric-value" id="res-sentiment">—</div>
+                    <div class="metric-subtext" id="res-polarity"></div>
+                </div>
+            </div>
+
+            <div class="details-grid">
+                <div class="detail-card glass-panel bounce-in" style="animation-delay: 0.3s">
+                    <h4><i class="fas fa-key"></i> Extracted Keywords</h4>
+                    <div class="tags-container" id="res-keywords"></div>
+                </div>
+
+                <div class="detail-card glass-panel bounce-in" style="animation-delay: 0.4s">
+                    <h4><i class="fas fa-project-diagram"></i> Named Entities</h4>
+                    <div class="entities-container" id="res-entities"></div>
+                </div>
+            </div>
+
+            <div style="margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div class="detail-card glass-panel bounce-in" style="animation-delay: 0.5s">
+                    <h4><i class="fas fa-chart-bar"></i> Category Confidence Scores</h4>
+                    <div style="position: relative; height: 300px;">
+                        <canvas id="categoryChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="detail-card glass-panel bounce-in" style="animation-delay: 0.6s">
+                    <h4><i class="fas fa-smile"></i> Sentiment Breakdown</h4>
+                    <div style="position: relative; height: 300px;">
+                        <canvas id="sentimentChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        const API = 'http://localhost:8000';
+
+        function switchTab(type, event) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            document.getElementById('url-container').classList.toggle('hidden', type !== 'url');
+            document.getElementById('text-container').classList.toggle('hidden', type !== 'text');
+        }
+
+        function showError(msg) {
+            const err = document.getElementById('error-message');
+            err.textContent = msg;
+            err.classList.remove('hidden');
+            setTimeout(() => err.classList.add('hidden'), 4000);
+        }
+
+        function setLoading(state) {
+            document.getElementById('loading').classList.toggle('hidden', !state);
+            document.getElementById('results').classList.toggle('hidden', state);
+        }
+
+        async function analyze(type) {
+            const input = document.getElementById(type + '-input').value.trim();
+            if (!input) { showError('Please provide input to analyze.'); return; }
+            if (type === 'text' && input.length < 20) { showError('Text too short. Enter at least 20 characters.'); return; }
+
+            setLoading(true);
+
+            try {
+                let endpoint, body;
+
+                if (type === 'url') {
+                    endpoint = `${API}/analyze-url`;
+                    body = { url: input };
+                } else {
+                    endpoint = `${API}/analyze`;
+                    body = { text: input };
+                }
+
+                const res  = await fetch(endpoint, {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify(body)
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.detail || 'Failed to process request.');
+                }
+
+                displayResults(data, type, input);
+
+            } catch (err) {
+                setLoading(false);
+                document.getElementById('results').classList.add('hidden');
+                showError(err.message);
+            }
+        }
+
+        function displayResults(data, type, input) {
+            setLoading(false);
+            document.getElementById('results').classList.remove('hidden');
+
+            const classification = data.classification;
+            const extraction     = data.extraction;
+            const sentiment      = extraction.sentiment;
+            const entities       = extraction.entities;
+            const keywords       = extraction.keywords;
+
+            // Header
+            const headline = data.title || (type === 'url' ? input : input.substring(0, 80) + '...');
+            document.getElementById('res-headline').textContent = headline;
+            document.getElementById('res-preview').textContent  =
+                type === 'text' ? input.substring(0, 200) + (input.length > 200 ? '...' : '') : '';
+
+            // Classification
+            document.getElementById('res-category').textContent   = classification.category.toUpperCase();
+            document.getElementById('res-confidence').textContent = `Confidence: ${classification.confidence}%`;
+
+            // Sentiment
+            const label    = sentiment.label;
+            const sentEl   = document.getElementById('res-sentiment');
+            sentEl.textContent = label.toUpperCase();
+            sentEl.style.background = label === 'positive' ? 'linear-gradient(135deg, #2ed573, #7bed9f)' :
+                                      label === 'negative' ? 'linear-gradient(135deg, #ff4757, #ff6b81)' :
+                                                             'linear-gradient(135deg, #a4b0be, #dfe6e9)';
+            sentEl.style['-webkit-background-clip'] = 'text';
+            sentEl.style['-webkit-text-fill-color'] = 'transparent';
+
+            document.getElementById('res-polarity').textContent = `Confidence: ${sentiment.confidence}%`;
+
+            const sentIcon = document.querySelector('.sentiment-icon');
+            sentIcon.style.background = label === 'positive' ? 'rgba(46,213,115,0.2)' :
+                                        label === 'negative' ? 'rgba(255,71,87,0.2)'  :
+                                                               'rgba(164,176,190,0.2)';
+            sentIcon.style.color = label === 'positive' ? '#2ed573' :
+                                   label === 'negative' ? '#ff4757' : '#a4b0be';
+
+            // Keywords
+            const kwContainer = document.getElementById('res-keywords');
+            kwContainer.innerHTML = '';
+            keywords.forEach(kw => {
+                const tag       = document.createElement('span');
+                tag.className   = 'keyword-tag';
+                tag.textContent = typeof kw === 'object' ? kw.keyword : kw;
+                kwContainer.appendChild(tag);
+            });
+
+            // Entities
+            const entContainer = document.getElementById('res-entities');
+            entContainer.innerHTML = '';
+
+            const entityStyles = {
+                'PERSON':  { bg: '#e1bee7', color: '#4a148c', icon: 'fa-user' },
+                'ORG':     { bg: '#bbdefb', color: '#0d47a1', icon: 'fa-building' },
+                'GPE':     { bg: '#c8e6c9', color: '#1b5e20', icon: 'fa-map-marker-alt' },
+                'LOC':     { bg: '#c8e6c9', color: '#1b5e20', icon: 'fa-map-marker-alt' },
+                'MONEY':   { bg: '#ffecb3', color: '#ff6f00', icon: 'fa-dollar-sign' },
+                'DATE':    { bg: '#f8bbd0', color: '#880e4f', icon: 'fa-calendar-alt' },
+                'PERCENT': { bg: '#ffe0b2', color: '#e65100', icon: 'fa-percent' },
+                'PRODUCT': { bg: '#b2ebf2', color: '#006064', icon: 'fa-box' },
+                'EVENT':   { bg: '#f0f4c3', color: '#827717', icon: 'fa-star' },
+                'NORP':    { bg: '#fce4ec', color: '#880e4f', icon: 'fa-flag' },
+            };
+
+            let hasEntities = false;
+            for (const [type, items] of Object.entries(entities)) {
+                if (!items || items.length === 0) continue;
+                hasEntities = true;
+
+                const style = entityStyles[type] || { bg: '#cfd8dc', color: '#263238', icon: 'fa-tag' };
+                const block = document.createElement('div');
+                block.className = 'entity-group';
+                block.innerHTML = `
+                    <div class="ent-label" style="background:${style.bg}; color:${style.color}">
+                        <i class="fas ${style.icon}"></i> ${type}
+                    </div>
+                    <div class="ent-list">
+                        ${items.map(v => `<span class="ent-item">${v}</span>`).join('')}
+                    </div>`;
+                entContainer.appendChild(block);
+            }
+
+            if (!hasEntities) {
+                entContainer.innerHTML = '<span class="empty-state">No major entities found.</span>';
+            }
+
+            // Category Confidence Chart
+            const categoryCtx = document.getElementById('categoryChart').getContext('2d');
+            if (window.categoryChartInstance) {
+                window.categoryChartInstance.destroy();
+            }
+            const allScores = classification.all_scores || {};
+            window.categoryChartInstance = new Chart(categoryCtx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(allScores),
+                    datasets: [{
+                        label: 'Confidence Score (%)',
+                        data: Object.values(allScores),
+                        backgroundColor: '#3b82f6',
+                        borderColor: '#1e40af',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: { color: '#f8fafc' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            max: 100,
+                            ticks: { color: '#94a3b8' },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        },
+                        y: {
+                            ticks: { color: '#94a3b8' },
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+
+            // Sentiment Breakdown Chart
+            const sentimentCtx = document.getElementById('sentimentChart').getContext('2d');
+            if (window.sentimentChartInstance) {
+                window.sentimentChartInstance.destroy();
+            }
+            const sentScores = sentiment.scores || {};
+            window.sentimentChartInstance = new Chart(sentimentCtx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(sentScores),
+                    datasets: [{
+                        label: 'Confidence Score (%)',
+                        data: Object.values(sentScores),
+                        backgroundColor: ['#2ed573', '#ff4757', '#a4b0be'],
+                        borderColor: ['#1a9e4f', '#d63447', '#8895a1'],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: { color: '#f8fafc' }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: { color: '#94a3b8' },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        },
+                        x: {
+                            ticks: { color: '#94a3b8' },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>

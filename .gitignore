@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+
+# Data files (optional)
+data/*.csv
+
+# Models (VERY IMPORTANT)
+results/bert_model/
+*.joblib
+
+# HuggingFace cache
+.cache/
+.huggingface/
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
