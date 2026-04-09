@@ -8,7 +8,10 @@ RUN apt-get update && apt-get install -y \
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Download spaCy and NLTK data
 RUN python -m spacy download en_core_web_sm
+RUN python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt'); nltk.download('wordnet')"
 
 COPY . .
 
