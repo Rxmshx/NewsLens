@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+import trafilatura
 import numpy as np
 import sys
 
@@ -110,7 +111,6 @@ def extract_info(text: str) -> dict:
 
 def scrape_url(url: str) -> dict:
     """Scrape title and body content from a news URL."""
-    import trafilatura
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
