@@ -1,4 +1,15 @@
-# 📰 NLP News Analysis System
+---
+title: NewsLens
+emoji: 📰
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
+license: mit
+short_description: AI-powered news classification and information extraction
+---
+
+# 📰 NewsLens - AI News Analysis System
 
 An end-to-end **AI-powered news analysis platform** that performs **news classification, sentiment analysis, entity extraction, and keyword extraction** using advanced NLP and deep learning models.
 
@@ -6,146 +17,43 @@ An end-to-end **AI-powered news analysis platform** that performs **news classif
 
 ## 🚀 Features
 
-* 🧠 **News Classification** using DistilBERT (Transformer-based model)
-* 💰 **Financial Sentiment Analysis** using FinBERT
-* 🏷️ **Named Entity Recognition (NER)** using spaCy
+* 🧠 **News Classification** using DistilBERT (92.3% accuracy)
+* 💰 **Financial Sentiment Analysis** using FinBERT (94%+ confidence)
+* 🏷️ **Named Entity Recognition** using spaCy
 * 🔑 **Keyword Extraction** using NLP techniques
-* 🌐 **Web Scraping Support** (BBC & Reuters)
+* 🌐 **Web Scraping** (BBC & Yahoo Finance)
 * ⚡ **FastAPI Backend** for real-time predictions
-* 🎨 **Web UI Integration** for user interaction
+* 🎨 **Glassmorphism Web UI**
 * 🚀 **GPU-Accelerated Training & Inference**
 
 ---
 
 ## 🧠 Models Used
 
-| Task                | Model      |
-| ------------------- | ---------- |
+| Task | Model |
+|---|---|
 | Text Classification | DistilBERT |
-| Sentiment Analysis  | FinBERT    |
-| NER                 | spaCy      |
-| Keyword Extraction  | RAKE / NLP |
-
----
-
-## 📁 Project Structure
-
-```
-web-nlp-project/
-│
-├── api/                # FastAPI backend
-├── data/               # Datasets (BBC, AG News, etc.)
-├── extraction/         # NER, sentiment, keywords
-├── models/             # ML & BERT models
-├── preprocessing/      # Text cleaning
-├── scraper/            # News scraping scripts
-├── results/            # Saved models & outputs
-├── static/             # UI (HTML, CSS)
-├── ui/                 # Frontend logic
-├── utils/              # Helper functions
-│
-├── main.py             # Pipeline runner
-└── README.md
-```
-
----
-
-## ⚙️ Installation
-
-### 1️⃣ Clone Repository
-
-```bash
-git clone https://github.com/YOUR_USERNAME/news-nlp-analysis-system.git
-cd news-nlp-analysis-system
-```
-
-### 2️⃣ Create Virtual Environment
-
-```bash
-python -m venv venv
-venv\Scripts\activate
-```
-
-### 3️⃣ Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
+| Sentiment Analysis | FinBERT |
+| NER | spaCy en_core_web_sm |
+| Keyword Extraction | POS-based NLP |
 
 ---
 
 ## ▶️ How to Run
 
-### 🔹 Run FastAPI Server
-
 ```bash
-uvicorn api.app:app --reload
-```
-
-Open:
-
-```
-http://127.0.0.1:8000/docs
-```
-
----
-
-## 🧪 Example Usage
-
-### Input
-
-```json
-{
-  "text": "Tesla shares plunged after reporting massive losses."
-}
-```
-
-### Output
-
-```json
-{
-  "category": "business",
-  "sentiment": "negative",
-  "entities": ["Tesla"],
-  "keywords": ["losses", "shares", "plunged"]
-}
+git clone https://github.com/Rxmshx/NewsLens.git
+cd NewsLens
+pip install -r requirements.txt
+python -m spacy download en_core_web_sm
+python -m uvicorn api.app:app --reload --port 8000
 ```
 
 ---
 
 ## 📊 Model Performance
 
-* ✅ Accuracy: ~92%
-* ✅ F1 Score: ~92%
+* ✅ Accuracy: 92.3%
+* ✅ F1 Score: 92.26%
 * ✅ Balanced Precision & Recall
-* 🚀 Trained using GPU acceleration
-
----
-
-## 🔥 Key Highlights
-
-* Combines **multiple NLP models** in a single pipeline
-* Uses **Transformer-based deep learning (BERT)**
-* Handles **real-world news data**
-* Designed as a **production-ready API system**
-
----
-
-## 🛠️ Tech Stack
-
-* Python
-* PyTorch
-* Hugging Face Transformers
-* FastAPI
-* spaCy
-* NLTK
-* BeautifulSoup (Scraping)
-
----
-
-## 📌 Future Improvements
-
-* 🌍 Real-time news streaming
-* 📊 Dashboard for analytics
-* 🌐 Deployment (HuggingFace / Docker / AWS)
-* 📱 Mobile-friendly UI
+* 🚀 Trained on RTX 5070 Ti GPU
