@@ -16,3 +16,4 @@ joblib
 textblob
 aiofiles
 python-multipart
+trafilatura
