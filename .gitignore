@@ -1,16 +1,13 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
 
 # Virtual environment
 venv/
 
 # Data files (optional)
 data/*.csv
-
-# Models (VERY IMPORTANT)
-results/bert_model/
-*.joblib
 
 # HuggingFace cache
 .cache/
@@ -21,3 +18,8 @@ results/bert_model/
 
 # OS files
 .DS_Store
+Thumbs.db
+
+# Logs
+logs/
+
