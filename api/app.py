@@ -40,12 +40,19 @@ app.add_middleware(
 )
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MODEL_DIR      = "./results/bert_model"
-LABEL_MAP_PATH = "./results/label_map.json"
-DEVICE         = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+from huggingface_hub import hf_hub_download, snapshot_download
 
-# ── Load DistilBERT Classifier ────────────────────────────────────────────────
-print(f"🤖 Loading DistilBERT from {MODEL_DIR}...")
+# ── Config ────────────────────────────────────────────────────────────────────
+HF_REPO = "Rxmshx/Newslens"
+DEVICE  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# ── Load DistilBERT from HuggingFace Hub ─────────────────────────────────────
+print("📥 Downloading models from HuggingFace Hub...")
+_cache    = snapshot_download(repo_id=HF_REPO, allow_patterns=["bert_model/*"])
+MODEL_DIR = os.path.join(_cache, "bert_model")
+LABEL_MAP_PATH = hf_hub_download(repo_id=HF_REPO, filename="label_map.json")
+
+print(f"🤖 Loading DistilBERT...")
 bert_tokenizer = DistilBertTokenizerFast.from_pretrained(MODEL_DIR)
 bert_model     = DistilBertForSequenceClassification.from_pretrained(MODEL_DIR)
 bert_model.to(DEVICE)
@@ -54,9 +61,7 @@ bert_model.eval()
 with open(LABEL_MAP_PATH) as f:
     label_data = json.load(f)
 id2label = {int(k): v for k, v in label_data["id2label"].items()}
-
 print(f"✅ API ready | Device: {DEVICE}")
-
 # ── Request Schemas ───────────────────────────────────────────────────────────
 class TextRequest(BaseModel):
     text: str
