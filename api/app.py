@@ -110,25 +110,41 @@ def extract_info(text: str) -> dict:
 
 def scrape_url(url: str) -> dict:
     """Scrape title and body content from a news URL."""
-    headers = {"User-Agent": "Mozilla/5.0"}
+    import trafilatura
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate",
+        "Connection": "keep-alive",
+    }
+
     try:
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
     except requests.RequestException as e:
         raise HTTPException(status_code=400, detail=f"Failed to fetch URL: {str(e)}")
 
-    soup  = BeautifulSoup(response.text, "html.parser")
-    title = soup.find("title")
-    title = title.get_text(strip=True) if title else "No title found"
+    # Try trafilatura first — better extraction
+    content = trafilatura.extract(response.text, include_comments=False, include_tables=False)
 
-    paragraphs = soup.find_all("p")
-    content    = " ".join(p.get_text(strip=True) for p in paragraphs)
+    # Fallback to BeautifulSoup
+    if not content or len(content.strip()) < 100:
+        soup     = BeautifulSoup(response.text, "html.parser")
+        paragraphs = soup.find_all("p")
+        content  = " ".join(p.get_text(strip=True) for p in paragraphs)
 
-    if len(content.strip()) < 100:
+    if not content or len(content.strip()) < 100:
         raise HTTPException(
             status_code=422,
-            detail="Could not extract enough content from this URL."
+            detail="Could not extract content. This site may block automated access."
         )
+
+    # Extract title
+    soup  = BeautifulSoup(response.text, "html.parser")
+    title = soup.find("title")
+    title = title.get_text(strip=True) if title else url
 
     return {"title": title, "content": content}
 
