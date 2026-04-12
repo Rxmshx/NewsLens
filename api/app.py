@@ -14,9 +14,10 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from preprocessing.cleaner import clean_text, clean_for_ner
-from extraction.ner import extract_entities, extract_entities_flat
-from extraction.keywords import extract_keywords, extract_keywords_simple
+from extraction.ner import extract_entities
+from extraction.keywords import extract_keywords
 from extraction.sentiment import get_sentiment
+from extraction.summarizer import summarize
 
 # ── App Setup ─────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -25,7 +26,6 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# Add this after app = FastAPI(...)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
@@ -40,19 +40,23 @@ app.add_middleware(
 )
 
 # ── Config ────────────────────────────────────────────────────────────────────
-from huggingface_hub import hf_hub_download, snapshot_download
+DEVICE          = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+LOCAL_MODEL_DIR = "./results/bert_model"
+LOCAL_LABEL_MAP = "./results/label_map.json"
+HF_REPO         = "Rxmshx/Newslens"
 
-# ── Config ────────────────────────────────────────────────────────────────────
-HF_REPO = "Rxmshx/Newslens"
-DEVICE  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if os.path.exists(LOCAL_MODEL_DIR):
+    print("📂 Loading DistilBERT from local files...")
+    MODEL_DIR      = LOCAL_MODEL_DIR
+    LABEL_MAP_PATH = LOCAL_LABEL_MAP
+else:
+    from huggingface_hub import hf_hub_download, snapshot_download
+    print("📥 Downloading models from HuggingFace Hub...")
+    _cache         = snapshot_download(repo_id=HF_REPO, allow_patterns=["bert_model/*"])
+    MODEL_DIR      = os.path.join(_cache, "bert_model")
+    LABEL_MAP_PATH = hf_hub_download(repo_id=HF_REPO, filename="label_map.json")
 
-# ── Load DistilBERT from HuggingFace Hub ─────────────────────────────────────
-print("📥 Downloading models from HuggingFace Hub...")
-_cache    = snapshot_download(repo_id=HF_REPO, allow_patterns=["bert_model/*"])
-MODEL_DIR = os.path.join(_cache, "bert_model")
-LABEL_MAP_PATH = hf_hub_download(repo_id=HF_REPO, filename="label_map.json")
-
-print(f"🤖 Loading DistilBERT...")
+print(f"🤖 Loading DistilBERT from {MODEL_DIR}...")
 bert_tokenizer = DistilBertTokenizerFast.from_pretrained(MODEL_DIR)
 bert_model     = DistilBertForSequenceClassification.from_pretrained(MODEL_DIR)
 bert_model.to(DEVICE)
@@ -62,6 +66,7 @@ with open(LABEL_MAP_PATH) as f:
     label_data = json.load(f)
 id2label = {int(k): v for k, v in label_data["id2label"].items()}
 print(f"✅ API ready | Device: {DEVICE}")
+
 # ── Request Schemas ───────────────────────────────────────────────────────────
 class TextRequest(BaseModel):
     text: str
@@ -102,51 +107,49 @@ def classify_text(text: str) -> dict:
 def extract_info(text: str) -> dict:
     """Run full information extraction pipeline."""
     return {
-        "entities":  extract_entities(text),        # from ner.py
-        "keywords":  extract_keywords(text, top_n=10),  # from keywords.py
-        "sentiment": get_sentiment(text),           # from sentiment.py (FinBERT)
+        "summary":   summarize(text),
+        "entities":  extract_entities(text),
+        "keywords":  extract_keywords(text, top_n=10),
+        "sentiment": get_sentiment(text),
     }
 
 
 def scrape_url(url: str) -> dict:
     """Scrape title and body content from a news URL."""
-    import trafilatura
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate",
-        "Connection": "keep-alive",
-    }
-
     try:
+        import trafilatura
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Connection": "keep-alive",
+        }
         response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
+
+        content = trafilatura.extract(response.text, include_comments=False, include_tables=False)
+
+        if not content or len(content.strip()) < 100:
+            soup       = BeautifulSoup(response.text, "html.parser")
+            paragraphs = soup.find_all("p")
+            content    = " ".join(p.get_text(strip=True) for p in paragraphs)
+
+        if not content or len(content.strip()) < 100:
+            raise HTTPException(
+                status_code=422,
+                detail="Could not extract content. This site may block automated access."
+            )
+
+        soup  = BeautifulSoup(response.text, "html.parser")
+        title = soup.find("title")
+        title = title.get_text(strip=True) if title else url
+
+        return {"title": title, "content": content}
+
+    except HTTPException:
+        raise
     except requests.RequestException as e:
         raise HTTPException(status_code=400, detail=f"Failed to fetch URL: {str(e)}")
-
-    # Try trafilatura first — better extraction
-    content = trafilatura.extract(response.text, include_comments=False, include_tables=False)
-
-    # Fallback to BeautifulSoup
-    if not content or len(content.strip()) < 100:
-        soup     = BeautifulSoup(response.text, "html.parser")
-        paragraphs = soup.find_all("p")
-        content  = " ".join(p.get_text(strip=True) for p in paragraphs)
-
-    if not content or len(content.strip()) < 100:
-        raise HTTPException(
-            status_code=422,
-            detail="Could not extract content. This site may block automated access."
-        )
-
-    # Extract title
-    soup  = BeautifulSoup(response.text, "html.parser")
-    title = soup.find("title")
-    title = title.get_text(strip=True) if title else url
-
-    return {"title": title, "content": content}
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -173,7 +176,7 @@ def classify(req: TextRequest):
 
 @app.post("/extract")
 def extract(req: TextRequest):
-    """Extract entities, keywords, and sentiment from text."""
+    """Extract entities, keywords, sentiment and summary from text."""
     if len(req.text.strip()) < 20:
         raise HTTPException(status_code=422, detail="Text too short.")
     return extract_info(req.text)
@@ -202,3 +205,13 @@ def analyze_url(req: URLRequest):
         "classification": classify_text(text),
         "extraction":     extract_info(text)
     }
+
+
+@app.post("/classify-lstm")
+def classify_lstm(req: TextRequest):
+    """Classify using BiLSTM model for comparison."""
+    if len(req.text.strip()) < 20:
+        raise HTTPException(status_code=422, detail="Text too short.")
+    from models.lstm_classifier import predict_lstm
+    result = predict_lstm(req.text)
+    return {"input_length": len(req.text), "classification": result}

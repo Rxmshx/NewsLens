@@ -66,6 +66,7 @@
                 <h2>Analysis Results</h2>
                 <h3 id="res-headline" class="article-title"></h3>
                 <p id="res-preview" class="article-preview"></p>
+                <p id="res-compression" class="article-preview" style="font-size:0.8rem; margin-top:8px; color:#64748b;"></p>
             </div>
 
             <div class="metrics-grid">
@@ -116,7 +117,7 @@
     </main>
 
     <script>
-        const API = '';
+        const API = window.location.origin || '';
 
         function switchTab(type, event) {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -145,26 +146,36 @@
             setLoading(true);
 
             try {
+                const apiBase = API || window.location.origin;
                 let endpoint, body;
 
                 if (type === 'url') {
-                    endpoint = `${API}/analyze-url`;
+                    endpoint = `${apiBase}/analyze-url`;
                     body = { url: input };
                 } else {
-                    endpoint = `${API}/analyze`;
+                    endpoint = `${apiBase}/analyze`;
                     body = { text: input };
                 }
 
-                const res  = await fetch(endpoint, {
-                    method:  'POST',
+                const res = await fetch(endpoint, {
+                    method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body:    JSON.stringify(body)
+                    body: JSON.stringify(body)
                 });
 
-                const data = await res.json();
+                const contentType = res.headers.get('content-type') || '';
+                let data;
+
+                if (contentType.includes('application/json')) {
+                    data = await res.json();
+                } else {
+                    const text = await res.text();
+                    data = { detail: text || 'Failed to process request.' };
+                }
 
                 if (!res.ok) {
-                    throw new Error(data.detail || 'Failed to process request.');
+                    const message = data?.detail;
+                    throw new Error(typeof message === 'string' ? message : JSON.stringify(message) || 'Failed to process request.');
                 }
 
                 displayResults(data, type, input);
@@ -172,182 +183,167 @@
             } catch (err) {
                 setLoading(false);
                 document.getElementById('results').classList.add('hidden');
-                showError(err.message);
+                showError(err.message || 'An unexpected error occurred.');
             }
         }
 
         function displayResults(data, type, input) {
-            setLoading(false);
-            document.getElementById('results').classList.remove('hidden');
+        setLoading(false);
+        document.getElementById('results').classList.remove('hidden');
 
-            const classification = data.classification;
-            const extraction     = data.extraction;
-            const sentiment      = extraction.sentiment;
-            const entities       = extraction.entities;
-            const keywords       = extraction.keywords;
+        const classification = data.classification || { category: 'Unknown', confidence: 0, all_scores: { Unknown: 100 } };
+        const extraction     = data.extraction || {};
+        const sentiment      = extraction.sentiment || { label: 'neutral', confidence: 0, scores: { positive: 0, negative: 0, neutral: 0 } };
+        const entities       = extraction.entities || {};
+        const keywords       = extraction.keywords || [];
 
-            // Header
-            const headline = data.title || (type === 'url' ? input : input.substring(0, 80) + '...');
-            document.getElementById('res-headline').textContent = headline;
-            document.getElementById('res-preview').textContent  =
+        // Header
+        const headline = data.title || (type === 'url' ? input : input.substring(0, 80) + '...');
+        document.getElementById('res-headline').textContent = headline;
+
+        // ✅ Summary — don't overwrite after this  
+        const summaryData = extraction.summary;
+        if (summaryData && summaryData.summary) {
+            document.getElementById('res-preview').textContent = summaryData.summary;
+            const comp = document.getElementById('res-compression');
+            if (comp) {
+                comp.textContent = `📝 ${summaryData.original_length} words → ${summaryData.summary_length} words (${Math.round((1 - summaryData.compression_ratio) * 100)}% compressed)`;
+            }
+        } else {
+            document.getElementById('res-preview').textContent =
                 type === 'text' ? input.substring(0, 200) + (input.length > 200 ? '...' : '') : '';
+        }
 
-            // Classification
-            document.getElementById('res-category').textContent   = classification.category.toUpperCase();
-            document.getElementById('res-confidence').textContent = `Confidence: ${classification.confidence}%`;
+        // Classification
+        document.getElementById('res-category').textContent   = classification.category.toUpperCase();
+        document.getElementById('res-confidence').textContent = `Confidence: ${classification.confidence}%`;
 
-            // Sentiment
-            const label    = sentiment.label;
-            const sentEl   = document.getElementById('res-sentiment');
-            sentEl.textContent = label.toUpperCase();
-            sentEl.style.background = label === 'positive' ? 'linear-gradient(135deg, #2ed573, #7bed9f)' :
-                                      label === 'negative' ? 'linear-gradient(135deg, #ff4757, #ff6b81)' :
-                                                             'linear-gradient(135deg, #a4b0be, #dfe6e9)';
-            sentEl.style['-webkit-background-clip'] = 'text';
-            sentEl.style['-webkit-text-fill-color'] = 'transparent';
+        // Sentiment
+        const label  = sentiment.label;
+        const sentEl = document.getElementById('res-sentiment');
+        sentEl.textContent = label.toUpperCase();
+        sentEl.style.background = label === 'positive' ? 'linear-gradient(135deg, #2ed573, #7bed9f)' :
+                                  label === 'negative' ? 'linear-gradient(135deg, #ff4757, #ff6b81)' :
+                                                         'linear-gradient(135deg, #a4b0be, #dfe6e9)';
+        sentEl.style['-webkit-background-clip'] = 'text';
+        sentEl.style['-webkit-text-fill-color'] = 'transparent';
 
-            document.getElementById('res-polarity').textContent = `Confidence: ${sentiment.confidence}%`;
+        document.getElementById('res-polarity').textContent = `Confidence: ${sentiment.confidence}%`;
 
-            const sentIcon = document.querySelector('.sentiment-icon');
-            sentIcon.style.background = label === 'positive' ? 'rgba(46,213,115,0.2)' :
-                                        label === 'negative' ? 'rgba(255,71,87,0.2)'  :
-                                                               'rgba(164,176,190,0.2)';
-            sentIcon.style.color = label === 'positive' ? '#2ed573' :
-                                   label === 'negative' ? '#ff4757' : '#a4b0be';
+        const sentIcon = document.querySelector('.sentiment-icon');
+        sentIcon.style.background = label === 'positive' ? 'rgba(46,213,115,0.2)' :
+                                    label === 'negative' ? 'rgba(255,71,87,0.2)'  :
+                                                           'rgba(164,176,190,0.2)';
+        sentIcon.style.color = label === 'positive' ? '#2ed573' :
+                               label === 'negative' ? '#ff4757' : '#a4b0be';
 
-            // Keywords
-            const kwContainer = document.getElementById('res-keywords');
-            kwContainer.innerHTML = '';
+        // Keywords
+        const kwContainer = document.getElementById('res-keywords');
+        kwContainer.innerHTML = '';
+        if (keywords.length === 0) {
+            kwContainer.innerHTML = '<span class="empty-state">No keywords found.</span>';
+        } else {
             keywords.forEach(kw => {
-                const tag       = document.createElement('span');
-                tag.className   = 'keyword-tag';
+                const tag     = document.createElement('span');
+                tag.className = 'keyword-tag';
                 tag.textContent = typeof kw === 'object' ? kw.keyword : kw;
                 kwContainer.appendChild(tag);
             });
-
-            // Entities
-            const entContainer = document.getElementById('res-entities');
-            entContainer.innerHTML = '';
-
-            const entityStyles = {
-                'PERSON':  { bg: '#e1bee7', color: '#4a148c', icon: 'fa-user' },
-                'ORG':     { bg: '#bbdefb', color: '#0d47a1', icon: 'fa-building' },
-                'GPE':     { bg: '#c8e6c9', color: '#1b5e20', icon: 'fa-map-marker-alt' },
-                'LOC':     { bg: '#c8e6c9', color: '#1b5e20', icon: 'fa-map-marker-alt' },
-                'MONEY':   { bg: '#ffecb3', color: '#ff6f00', icon: 'fa-dollar-sign' },
-                'DATE':    { bg: '#f8bbd0', color: '#880e4f', icon: 'fa-calendar-alt' },
-                'PERCENT': { bg: '#ffe0b2', color: '#e65100', icon: 'fa-percent' },
-                'PRODUCT': { bg: '#b2ebf2', color: '#006064', icon: 'fa-box' },
-                'EVENT':   { bg: '#f0f4c3', color: '#827717', icon: 'fa-star' },
-                'NORP':    { bg: '#fce4ec', color: '#880e4f', icon: 'fa-flag' },
-            };
-
-            let hasEntities = false;
-            for (const [type, items] of Object.entries(entities)) {
-                if (!items || items.length === 0) continue;
-                hasEntities = true;
-
-                const style = entityStyles[type] || { bg: '#cfd8dc', color: '#263238', icon: 'fa-tag' };
-                const block = document.createElement('div');
-                block.className = 'entity-group';
-                block.innerHTML = `
-                    <div class="ent-label" style="background:${style.bg}; color:${style.color}">
-                        <i class="fas ${style.icon}"></i> ${type}
-                    </div>
-                    <div class="ent-list">
-                        ${items.map(v => `<span class="ent-item">${v}</span>`).join('')}
-                    </div>`;
-                entContainer.appendChild(block);
-            }
-
-            if (!hasEntities) {
-                entContainer.innerHTML = '<span class="empty-state">No major entities found.</span>';
-            }
-
-            // Category Confidence Chart
-            const categoryCtx = document.getElementById('categoryChart').getContext('2d');
-            if (window.categoryChartInstance) {
-                window.categoryChartInstance.destroy();
-            }
-            const allScores = classification.all_scores || {};
-            window.categoryChartInstance = new Chart(categoryCtx, {
-                type: 'bar',
-                data: {
-                    labels: Object.keys(allScores),
-                    datasets: [{
-                        label: 'Confidence Score (%)',
-                        data: Object.values(allScores),
-                        backgroundColor: '#3b82f6',
-                        borderColor: '#1e40af',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    indexAxis: 'y',
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: true,
-                            labels: { color: '#f8fafc' }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            max: 100,
-                            ticks: { color: '#94a3b8' },
-                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                        },
-                        y: {
-                            ticks: { color: '#94a3b8' },
-                            grid: { display: false }
-                        }
-                    }
-                }
-            });
-
-            // Sentiment Breakdown Chart
-            const sentimentCtx = document.getElementById('sentimentChart').getContext('2d');
-            if (window.sentimentChartInstance) {
-                window.sentimentChartInstance.destroy();
-            }
-            const sentScores = sentiment.scores || {};
-            window.sentimentChartInstance = new Chart(sentimentCtx, {
-                type: 'bar',
-                data: {
-                    labels: Object.keys(sentScores),
-                    datasets: [{
-                        label: 'Confidence Score (%)',
-                        data: Object.values(sentScores),
-                        backgroundColor: ['#2ed573', '#ff4757', '#a4b0be'],
-                        borderColor: ['#1a9e4f', '#d63447', '#8895a1'],
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: true,
-                            labels: { color: '#f8fafc' }
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            max: 100,
-                            ticks: { color: '#94a3b8' },
-                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                        },
-                        x: {
-                            ticks: { color: '#94a3b8' },
-                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                        }
-                    }
-                }
-            });
         }
+
+        // Entities
+        const entContainer = document.getElementById('res-entities');
+        entContainer.innerHTML = '';
+
+        const entityStyles = {
+            'PERSON':  { bg: '#e1bee7', color: '#4a148c', icon: 'fa-user' },
+            'ORG':     { bg: '#bbdefb', color: '#0d47a1', icon: 'fa-building' },
+            'GPE':     { bg: '#c8e6c9', color: '#1b5e20', icon: 'fa-map-marker-alt' },
+            'LOC':     { bg: '#c8e6c9', color: '#1b5e20', icon: 'fa-map-marker-alt' },
+            'MONEY':   { bg: '#ffecb3', color: '#ff6f00', icon: 'fa-dollar-sign' },
+            'DATE':    { bg: '#f8bbd0', color: '#880e4f', icon: 'fa-calendar-alt' },
+            'PERCENT': { bg: '#ffe0b2', color: '#e65100', icon: 'fa-percent' },
+            'PRODUCT': { bg: '#b2ebf2', color: '#006064', icon: 'fa-box' },
+            'EVENT':   { bg: '#f0f4c3', color: '#827717', icon: 'fa-star' },
+            'NORP':    { bg: '#fce4ec', color: '#880e4f', icon: 'fa-flag' },
+        };
+
+        let hasEntities = false;
+        for (const [etype, items] of Object.entries(entities)) {
+            if (!items || items.length === 0) continue;
+            hasEntities = true;
+            const style = entityStyles[etype] || { bg: '#cfd8dc', color: '#263238', icon: 'fa-tag' };
+            const block = document.createElement('div');
+            block.className = 'entity-group';
+            block.innerHTML = `
+                <div class="ent-label" style="background:${style.bg}; color:${style.color}">
+                    <i class="fas ${style.icon}"></i> ${etype}
+                </div>
+                <div class="ent-list">
+                    ${items.map(v => `<span class="ent-item">${v}</span>`).join('')}
+                </div>`;
+            entContainer.appendChild(block);
+        }
+
+        if (!hasEntities) {
+            entContainer.innerHTML = '<span class="empty-state">No major entities found.</span>';
+        }
+
+        // Category Confidence Chart
+        const categoryCtx = document.getElementById('categoryChart').getContext('2d');
+        if (window.categoryChartInstance) window.categoryChartInstance.destroy();
+        const allScores = classification.all_scores && Object.keys(classification.all_scores).length ? classification.all_scores : { Unknown: 100 };
+        window.categoryChartInstance = new Chart(categoryCtx, {
+            type: 'bar',
+            data: {
+                labels: Object.keys(allScores),
+                datasets: [{
+                    label: 'Confidence Score (%)',
+                    data: Object.values(allScores),
+                    backgroundColor: '#3b82f6',
+                    borderColor: '#1e40af',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: true, labels: { color: '#f8fafc' } } },
+                scales: {
+                    x: { max: 100, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+                    y: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+                }
+            }
+        });
+
+        // Sentiment Breakdown Chart
+        const sentimentCtx = document.getElementById('sentimentChart').getContext('2d');
+        if (window.sentimentChartInstance) window.sentimentChartInstance.destroy();
+        const sentScores = sentiment.scores && Object.keys(sentiment.scores).length ? sentiment.scores : { positive: 0, negative: 0, neutral: 0 };
+        window.sentimentChartInstance = new Chart(sentimentCtx, {
+            type: 'bar',
+            data: {
+                labels: Object.keys(sentScores),
+                datasets: [{
+                    label: 'Confidence Score (%)',
+                    data: Object.values(sentScores),
+                    backgroundColor: ['#2ed573', '#ff4757', '#a4b0be'],
+                    borderColor: ['#1a9e4f', '#d63447', '#8895a1'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: true, labels: { color: '#f8fafc' } } },
+                scales: {
+                    y: { beginAtZero: true, max: 100, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+                    x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+                }
+            }
+        });
+}
     </script>
 </body>
 </html>
