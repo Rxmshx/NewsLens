@@ -23,3 +23,7 @@ Thumbs.db
 # Logs
 logs/
 
+results/lstm_model/
+results/lstm_vocab.json
+results/lstm_labels.json
+
